@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>パックマンもどき</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            text-align: center;
+            background-color: #111;
+            color: #fff;
+            margin: 0;
+            padding-top: 20px;
+        }
+        h1 {
+            color: #FFFF00; /* パックマンの黄色 */
+        }
+        canvas {
+            background-color: #000;
+            border: 4px solid #0000AA; /* 迷路の青色 */
+            box-shadow: 0 0 20px #0000AA;
+        }
+        #info {
+            font-size: 1.2em;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>パックマンもどき</h1>
+    <canvas id="gameCanvas" width="440" height="480"></canvas>
+    <div id="info">
+        <p>スコア: <span id="score">0</span></p>
+        <p id="message"></p>
+    </div>
+
+    <script>
+        // --- 1. ゲームのセットアップ ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreElement = document.getElementById('score');
+        const messageElement = document.getElementById('message');
+
+        const tileSize = 20; // 1タイルのサイズ
+        const rows = canvas.height / tileSize; // 24
+        const cols = canvas.width / tileSize;  // 22
+
+        // マップ (0: 壁, 1: ドット, 2: 空白, 3: パワーエサ)
+        // 簡単な迷路を定義します
+        const map = [
+            [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+            [0,1,1,1,1,1,1,1,1,1,0,0,1,1,1,1,1,1,1,1,1,0],
+            [0,3,0,0,1,0,0,1,0,1,0,0,1,0,1,0,0,1,0,0,3,0],
+            [0,1,0,0,1,0,0,1,0,1,0,0,1,0,1,0,0,1,0,0,1,0],
+            [0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0],
+            [0,1,0,0,1,0,1,0,0,0,0,0,0,0,0,1,0,1,0,0,1,0],
+            [0,1,1,1,1,0,1,1,1,1,0,0,1,1,1,1,0,1,1,1,1,0],
+            [0,0,0,0,1,0,0,0,0,1,0,0,1,0,0,0,0,1,0,0,0,0],
+            [0,0,0,0,1,0,1,1,1,1,1,1,1,1,1,1,0,1,0,0,0,0],
+            [0,0,0,0,1,0,1,0,0,0,2,2,0,0,0,1,0,1,0,0,0,0],
+            [0,1,1,1,1,1,1,0,2,2,2,2,2,2,0,1,1,1,1,1,1,0], // ゴーストの巣
+            [0,0,0,0,1,0,1,0,0,0,0,0,0,0,0,1,0,1,0,0,0,0],
+            [0,0,0,0,1,0,1,1,1,1,1,1,1,1,1,1,0,1,0,0,0,0],
+            [0,0,0,0,1,0,0,0,0,1,0,0,1,0,0,0,0,1,0,0,0,0],
+            [0,1,1,1,1,1,1,1,1,1,0,0,1,1,1,1,1,1,1,1,1,0],
+            [0,1,0,0,1,0,1,0,0,0,0,0,0,0,0,1,0,1,0,0,1,0],
+            [0,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,0],
+            [0,3,0,0,1,0,0,1,0,1,0,0,1,0,1,0,0,1,0,0,3,0],
+            [0,1,0,0,1,0,0,1,0,1,0,0,1,0,1,0,0,1,0,0,1,0],
+            [0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0],
+            [0,1,0,0,1,0,1,0,0,0,0,0,0,0,0,1,0,1,0,0,1,0],
+            [0,1,1,1,1,1,1,1,1,1,0,0,1,1,1,1,1,1,1,1,1,0],
+            [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+            [2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2] // UI用スペース
+        ];
+
+        let score = 0;
+        let dots = 0;
+        let powerMode = false;
+        let powerModeTimer = 0;
+        let gameOver = false;
+        let gameWin = false;
+
+        // --- 2. プレイヤーの定義 ---
+        const player = {
+            x: 1 * tileSize + tileSize / 2,
+            y: 1 * tileSize + tileSize / 2,
+            radius: tileSize / 2 - 2,
+            speed: 2,
+            dx: 0,
+            dy: 0,
+            nextDx: 0, // 次の入力を保持
+            nextDy: 0,
+            mouthAngle: 0.1,
+            mouthDirection: 1
+        };
+
+        // --- 3. ゴーストの定義 ---
+        const ghosts = [
+            { x: 10 * tileSize + tileSize / 2, y: 10 * tileSize + tileSize / 2, dx: 0, dy: -1, color: '#FF0000', radius: player.radius, speed: 1.5, vulnerable: false }, // 赤
+            { x: 11 * tileSize + tileSize / 2, y: 10 * tileSize + tileSize / 2, dx: 0, dy: -1, color: '#FFB8FF', radius: player.radius, speed: 1.5, vulnerable: false }, // ピンク
+            { x: 10 * tileSize + tileSize / 2, y: 11 * tileSize + tileSize / 2, dx: 1, dy: 0, color: '#00FFFF', radius: player.radius, speed: 1.5, vulnerable: false }, // 水色
+            { x: 11 * tileSize + tileSize / 2, y: 11 * tileSize + tileSize / 2, dx: -1, dy: 0, color: '#FFB852', radius: player.radius, speed: 1.5, vulnerable: false }  // オレンジ
+        ];
+        const initialGhostPositions = JSON.parse(JSON.stringify(ghosts)); // 初期位置を記憶
+
+        // --- 4. 入力ハンドラ ---
+        document.addEventListener('keydown', (e) => {
+            if (gameOver || gameWin) return;
+            switch (e.key) {
+                case 'ArrowUp':
+                    player.nextDx = 0; player.nextDy = -player.speed;
+                    break;
+                case 'ArrowDown':
+                    player.nextDx = 0; player.nextDy = player.speed;
+                    break;
+                case 'ArrowLeft':
+                    player.nextDx = -player.speed; player.nextDy = 0;
+                    break;
+                case 'ArrowRight':
+                case 'ArrowRight':
+                    player.nextDx = player.speed; player.nextDy = 0;
+                    break;
+            }
+        });
+
+        // --- 5. ヘルパー関数 (衝突判定) ---
+        function checkWallCollision(x, y, dx, dy, radius) {
+            // 4つの角で判定
+            const checkPoints = [
+                { x: x + dx - radius, y: y + dy - radius }, // 左上
+                { x: x + dx + radius, y: y + dy - radius }, // 右上
+                { x: x + dx - radius, y: y + dy + radius }, // 左下
+                { x: x + dx + radius, y: y + dy + radius }  // 右下
+            ];
+
+            for (const point of checkPoints) {
+                const col = Math.floor(point.x / tileSize);
+                const row = Math.floor(point.y / tileSize);
+                if (map[row][col] === 0) {
+                    return true; // 壁に衝突
+                }
+            }
+            return false;
+        }
+
+        // --- 6. ゲームロジックの更新 ---
+
+        // プレイヤーの更新
+        function updatePlayer() {
+            if (gameOver || gameWin) return;
+
+            // 次の方向転換が可能かチェック
+            const playerCol = Math.floor(player.x / tileSize);
+            const playerRow = Math.floor(player.y / tileSize);
+            const isAtIntersection = (player.x % tileSize === tileSize / 2) && (player.y % tileSize === tileSize / 2);
+
+            if (isAtIntersection && (player.nextDx !== 0 || player.nextDy !== 0)) {
+                if (!checkWallCollision(player.x, player.y, player.nextDx, player.nextDy, player.radius)) {
+                    player.dx = player.nextDx;
+                    player.dy = player.nextDy;
+                    player.nextDx = 0;
+                    player.nextDy = 0;
+                }
+            }
+
+            // 現在の方向に進めるかチェック
+            if (!checkWallCollision(player.x, player.y, player.dx, player.dy, player.radius)) {
+                player.x += player.dx;
+                player.y += player.dy;
+            } else {
+                // 壁に当たったら止まる
+                player.dx = 0;
+                player.dy = 0;
+            }
+
+            // 画面端のワープ
+            if (player.x < 0) player.x = canvas.width;
+            if (player.x > canvas.width) player.x = 0;
+
+            // ドットの取得
+            const col = Math.floor(player.x / tileSize);
+            const row = Math.floor(player.y / tileSize);
+
+            if (map[row][col] === 1) { // ドット
+                map[row][col] = 2; // 空白にする
+                score += 10;
+                dots--;
+                scoreElement.textContent = score;
+            } else if (map[row][col] === 3) { // パワーエサ
+                map[row][col] = 2;
+                score += 50;
+                dots--; // ドットとしてもカウント
+                scoreElement.textContent = score;
+                activatePowerMode();
+            }
+
+            // パックマンの口の動き
+            player.mouthAngle += player.mouthDirection * 0.05;
+            if (player.mouthAngle > 0.4 || player.mouthAngle < 0.1) {
+                player.mouthDirection *= -1;
+            }
+        }
+
+        // パワーモード
+        function activatePowerMode() {
+            powerMode = true;
+            powerModeTimer = 300; // 300フレーム (約5秒)
+            ghosts.forEach(ghost => {
+                ghost.vulnerable = true;
+                // 逃げるAIのため、進行方向を反転
+                ghost.dx *= -1;
+                ghost.dy *= -1;
+            });
+        }
+
+        // ゴーストの更新
+        function updateGhosts() {
+            if (gameOver || gameWin) return;
+
+            if (powerMode) {
+                powerModeTimer--;
+                if (powerModeTimer <= 0) {
+                    powerMode = false;
+                    ghosts.forEach(ghost => ghost.vulnerable = false);
+                }
+            }
+
+            ghosts.forEach(ghost => {
+                const isAtIntersection = (ghost.x % tileSize === tileSize / 2) && (ghost.y % tileSize === tileSize / 2);
+                
+                if (isAtIntersection) {
+                    // AI: 曲がり角でランダムな新しい方向を選ぶ (来た道は除く)
+                    const possibleMoves = [];
+                    // (dx, dy)
+                    if (ghost.dx <= 0 && !checkWallCollision(ghost.x, ghost.y, ghost.speed, 0, ghost.radius)) possibleMoves.push({ dx: ghost.speed, dy: 0 }); // 右
+                    if (ghost.dx >= 0 && !checkWallCollision(ghost.x, ghost.y, -ghost.speed, 0, ghost.radius)) possibleMoves.push({ dx: -ghost.speed, dy: 0 }); // 左
+                    if (ghost.dy <= 0 && !checkWallCollision(ghost.x, ghost.y, 0, ghost.speed, ghost.radius)) possibleMoves.push({ dx: 0, dy: ghost.speed }); // 下
+                    if (ghost.dy >= 0 && !checkWallCollision(ghost.x, ghost.y, 0, -ghost.speed, ghost.radius)) possibleMoves.push({ dx: 0, dy: -ghost.speed }); // 上
+
+                    if (possibleMoves.length > 0) {
+                        const move = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
+                        ghost.dx = move.dx;
+                        ghost.dy = move.dy;
+                    } else {
+                        // 袋小路なら引き返す
+                        ghost.dx *= -1;
+                        ghost.dy *= -1;
+                    }
+                }
+
+                // 壁チェック
+                if (checkWallCollision(ghost.x, ghost.y, ghost.dx, ghost.dy, ghost.radius)) {
+                    // 壁に当たったら止まり、次の交差点判定を待つ
+                    ghost.dx = 0;
+                    ghost.dy = 0;
+                } else {
+                    ghost.x += ghost.dx;
+                    ghost.y += ghost.dy;
+                }
+
+                // 画面端のワープ
+                if (ghost.x < 0) ghost.x = canvas.width;
+                if (ghost.x > canvas.width) ghost.x = 0;
+
+                // プレイヤーとの衝突判定
+                const dist = Math.hypot(player.x - ghost.x, player.y - ghost.y);
+                if (dist < player.radius + ghost.radius) {
+                    if (ghost.vulnerable) {
+                        // ゴーストを食べる
+                        score += 200;
+                        scoreElement.textContent = score;
+                        resetGhost(ghost);
+                    } else {
+                        // ゲームオーバー
+                        gameOver = true;
+                    }
+                }
+            });
+        }
+
+        // ゴーストを初期位置に戻す
+        function resetGhost(ghost) {
+            const index = ghosts.indexOf(ghost);
+            ghost.x = initialGhostPositions[index].x;
+            ghost.y = initialGhostPositions[index].y;
+            ghost.dx = initialGhostPositions[index].dx;
+            ghost.dy = initialGhostPositions[index].dy;
+            ghost.vulnerable = false;
+        }
+
+        // 勝利判定
+        function checkWin() {
+            if (dots === 0) {
+                gameWin = true;
+            }
+        }
+
+        // --- 7. 描画処理 ---
+
+        // マップの描画
+        function drawMap() {
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    const tile = map[r][c];
+                    if (tile === 0) { // 壁
+                        ctx.fillStyle = '#0000AA';
+                        ctx.fillRect(c * tileSize, r * tileSize, tileSize, tileSize);
+                    } else if (tile === 1) { // ドット
+                        ctx.fillStyle = '#FFFFFF';
+                        ctx.beginPath();
+                        ctx.arc(c * tileSize + tileSize / 2, r * tileSize + tileSize / 2, 2, 0, Math.PI * 2);
+                        ctx.fill();
+                    } else if (tile === 3) { // パワーエサ
+                        ctx.fillStyle = '#FFD700';
+                        ctx.beginPath();
+                        ctx.arc(c * tileSize + tileSize / 2, r * tileSize + tileSize / 2, 6, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+            }
+        }
+
+        // プレイヤーの描画
+        function drawPlayer() {
+            let startAngle = player.mouthAngle;
+            let endAngle = Math.PI * 2 - player.mouthAngle;
+
+            // 向きに合わせて口の角度を変える
+            if (player.dx > 0) { // 右
+                startAngle = player.mouthAngle;
+                endAngle = Math.PI * 2 - player.mouthAngle;
+            } else if (player.dx < 0) { // 左
+                startAngle = Math.PI + player.mouthAngle;
+                endAngle = Math.PI - player.mouthAngle;
+            } else if (player.dy > 0) { // 下
+                startAngle = Math.PI / 2 + player.mouthAngle;
+                endAngle = Math.PI / 2 - player.mouthAngle;
+            } else if (player.dy < 0) { // 上
+                startAngle = -Math.PI / 2 + player.mouthAngle;
+                endAngle = -Math.PI / 2 - player.mouthAngle;
+            }
+
+            ctx.fillStyle = '#FFFF00'; // 黄色
+            ctx.beginPath();
+            ctx.arc(player.x, player.y, player.radius, startAngle, endAngle);
+            ctx.lineTo(player.x, player.y); // 口の中心を閉じる
+            ctx.fill();
+        }
+
+        // ゴーストの描画
+        function drawGhosts() {
+            ghosts.forEach(ghost => {
+                ctx.fillStyle = ghost.vulnerable ? '#AAAAFF' : ghost.color; // イジケ状態の色
+                
+                // 体
+                ctx.beginPath();
+                ctx.arc(ghost.x, ghost.y, ghost.radius, Math.PI, 0); // 半円
+                ctx.lineTo(ghost.x + ghost.radius, ghost.y + ghost.radius); // 右下
+                // ギザギザ
+                ctx.lineTo(ghost.x + ghost.radius * 2/3, ghost.y + ghost.radius * 2/3);
+                ctx.lineTo(ghost.x + ghost.radius * 1/3, ghost.y + ghost.radius);
+                ctx.lineTo(ghost.x, ghost.y + ghost.radius * 2/3);
+                ctx.lineTo(ghost.x - ghost.radius * 1/3, ghost.y + ghost.radius);
+                ctx.lineTo(ghost.x - ghost.radius * 2/3, ghost.y + ghost.radius * 2/3);
+                
+                ctx.lineTo(ghost.x - ghost.radius, ghost.y + ghost.radius); // 左下
+                ctx.closePath();
+                ctx.fill();
+
+                // 目
+                ctx.fillStyle = '#FFF';
+                ctx.beginPath();
+                ctx.arc(ghost.x - ghost.radius / 2.5, ghost.y - ghost.radius / 3, 2.5, 0, Math.PI * 2); // 左目
+                ctx.arc(ghost.x + ghost.radius / 2.5, ghost.y - ghost.radius / 3, 2.5, 0, Math.PI * 2); // 右目
+                ctx.fill();
+            });
+        }
+
+        // UI（メッセージ）の描画
+        function drawUI() {
+            if (gameOver) {
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                ctx.fillRect(0, canvas.height / 3, canvas.width, canvas.height / 3);
+                ctx.fillStyle = '#FF0000';
+                ctx.font = 'bold 40px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2);
+                messageElement.textContent = 'リロードして再挑戦';
+            } else if (gameWin) {
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                ctx.fillRect(0, canvas.height / 3, canvas.width, canvas.height / 3);
+                ctx.fillStyle = '#FFFF00';
+                ctx.font = 'bold 40px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('YOU WIN!', canvas.width / 2, canvas.height / 2);
+                messageElement.textContent = 'クリアおめでとう！';
+            }
+        }
+
+        // --- 8. ゲームループ ---
+        function gameLoop() {
+            // 更新
+            updatePlayer();
+            updateGhosts();
+
+            // 描画
+            ctx.clearRect(0, 0, canvas.width, canvas.height); // 画面クリア
+            drawMap();
+            drawPlayer();
+            drawGhosts();
+            drawUI(); // UIは最後に描画
+
+            // 勝利判定
+            if (!gameWin && !gameOver) {
+                checkWin();
+            }
+
+            // ループ
+            requestAnimationFrame(gameLoop);
+        }
+
+        // --- 9. ゲームの初期化と開始 ---
+        function init() {
+            // 総ドット数を数える
+            dots = 0;
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    if (map[r][c] === 1 || map[r][c] === 3) {
+                        dots++;
+                    }
+                }
+            }
+            scoreElement.textContent = score;
+            messageElement.textContent = '矢印キーで操作';
+            gameLoop(); // ゲームループ開始
+        }
+
+        init();
+    </script>
+
+</body>
+</html>

@@ -1,0 +1,88 @@
+<!-- こんにちは！！！！！！！ディスコ入って！！！！
+https://dsc.gg/rec877
+-->
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rec877Games - 悶絶するレベルのクソゲー図鑑</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+</head>
+    <button class="theme-toggle" id="themeToggle" aria-label="テーマ切替">🌙</button>
+    
+    <div class="introduction">
+        <h1>Rec877<span style="color: #7300ff;">Games</span></h1>
+        <h2>Rec877Gamesの特徴（笑）</h2>
+        <p>広告なし！逆にこんなクソゲーに時間浪費してくれてるだけでありがたいのに広告で不快にさせるのなんて言語道断じゃないすか！</p>
+        <p>シンプルな操作性！複雑な操作なんて覚えるのめんどくさいじゃないすか！</p>
+        <p>ユーザーアンフレンドリー！PCユーザーのみ優遇してます！</p>
+        <p>公式サイトがRec877Appsの使いまわしってうわなにをするくぁwせdrftgyふじこlp</p>
+        <a href="#apps" class="btn btn--orange">ksゲーをすべて見る</a>
+        <a href="https://github.com/Banana-Niku87729/Games_Rec877Page" target="_blank" rel="noopener" class="btn btn--github">Githubのレポジトリを見る</a>
+    </div>
+    <div id="kugiri">
+        <hr>
+    </div>
+    <div class="apps" id="apps">
+        <h1><span style="color: #7300ff;">Games</span></h1>
+        <div class="card card-skin">
+            <div class="card__imgframe"></div>
+            <div class="card__textbox">
+                <div class="card__titletext">
+                    2048
+                </div>
+                <div class="card__overviewtext">
+                    シンプルな2048ゲームです！BGMもない！効果音もない！最高スコアも保存されない！
+                </div>
+                <a href="https://game.rec877.com/2048" class="btn btn--card" target="_blank">サイトへ移動</a>
+            </div>
+        </div>
+        <div class="card card-skin">
+            <div class="card__imgframe2"></div>
+            <div class="card__textbox">
+                <div class="card__titletext">
+                    ブロック崩し
+                </div>
+                <div class="card__overviewtext">
+                    シンプルなブロック崩しです！パソコンで表示してもなぜかプレイ画面が小さくて、基本的にボールが落ちると詰みます
+                </div>
+                <a href="https://game.rec877.com/breakout" class="btn btn--card" target="_blank">サイトへ移動</a>
+            </div>
+        </div>
+        <div class="card card-skin">
+            <div class="card__imgframe3"></div>
+            <div class="card__textbox">
+                <div class="card__titletext">
+                    Tetris
+                </div>
+                <div class="card__overviewtext">
+                    ただの落ち物パズルゲームです！Tetirsじゃないです！Tスピンはできません！SRSもありません！七種一巡もありません！
+                </div>
+                <a href="https://game.rec877.com/tetirs" class="btn btn--card" target="_blank">サイトへ移動</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const themeToggle = document.getElementById('themeToggle');
+        const html = document.documentElement;
+        
+        // 保存されたテーマを読み込み
+        const savedTheme = localStorage.getItem('theme') || 'light';
+        html.setAttribute('data-theme', savedTheme);
+        themeToggle.textContent = savedTheme === 'dark' ? '☀️' : '🌙';
+        
+        // テーマ切り替え
+        themeToggle.addEventListener('click', () => {
+            const currentTheme = html.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            
+            html.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+            themeToggle.textContent = newTheme === 'dark' ? '☀️' : '🌙';
+        });
+    </script>
+</body>
+</html>

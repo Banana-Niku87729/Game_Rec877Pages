@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>2048 ゲーム</title>
+    <!-- Tailwind CSS を読み込み -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Inter フォントを読み込み -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+
+    <style>
+        /* 基本スタイルの設定 */
+        body {
+            font-family: 'Inter', sans-serif;
+            touch-action: none; /* スクロールやズームを防ぐ */
+            overscroll-behavior: none; /* 端でのバウンスを防ぐ */
+        }
+
+        /* ゲームコンテナ */
+        #game-board {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            grid-template-rows: repeat(4, 1fr);
+            gap: 1rem; /* 16px */
+            background-color: #bbada0; /* グリッド背景色 */
+            border-radius: 0.5rem; /* 8px */
+            padding: 1rem; /* 16px */
+            position: relative;
+            /* グリッドのサイズをビューポートに基づいて設定 */
+            width: 90vw;
+            height: 90vw;
+            max-width: 450px;
+            max-height: 450px;
+            box-sizing: border-box;
+        }
+
+        /* グリッドの背景セル */
+        .grid-cell {
+            background-color: rgba(238, 228, 218, 0.35); /* セルの背景色 */
+            border-radius: 0.25rem; /* 4px */
+        }
+
+        /* タイル */
+        .tile {
+            position: absolute;
+            /* CSS変数を使って位置を指定 */
+            --x: 0;
+            --y: 0;
+            /* サイズをセルのサイズに合わせる (calc( (100% - 5rem) / 4 )) 
+               5rem = padding(1rem*2) + gap(1rem*3) */
+            width: calc((100% - 5rem) / 4);
+            height: calc((100% - 5rem) / 4);
+            
+            /* アニメーション */
+            transition: transform 100ms ease-in-out, background-color 100ms ease-in-out;
+            transform: translate(calc(1rem + var(--x) * (100% + 1rem)), calc(1rem + var(--y) * (100% + 1rem)));
+
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-weight: 900; /* 最も太いフォント */
+            font-size: 2.25rem; /* 36px (基本サイズ) */
+            border-radius: 0.25rem; /* 4px */
+            box-sizing: border-box;
+            
+            /* タイルの値に応じた色設定 (CSS変数で上書き) */
+            background-color: var(--bg-color, #eee4da);
+            color: var(--text-color, #776e65);
+        }
+
+        /* タイルの値が大きくなった時のフォントサイズ調整 */
+        .tile[data-value="128"],
+        .tile[data-value="256"],
+        .tile[data-value="512"] {
+            font-size: 2rem; /* 32px */
+        }
+        .tile[data-value="1024"],
+        .tile[data-value="2048"] {
+            font-size: 1.5rem; /* 24px */
+        }
+
+        /* --- アニメーション --- */
+        
+        /* 新規タイルの出現アニメーション */
+        .tile.new {
+            animation: appear 200ms ease-in-out;
+        }
+        @keyframes appear {
+            0% {
+                transform: translate(calc(1rem + var(--x) * (100% + 1rem)), calc(1rem + var(--y) * (100% + 1rem))) scale(0);
+            }
+            100% {
+                transform: translate(calc(1rem + var(--x) * (100% + 1rem)), calc(1rem + var(--y) * (100% + 1rem))) scale(1);
+            }
+        }
+
+        /* マージ（合体）アニメーション */
+        .tile.merged {
+            animation: pop 200ms ease-in-out;
+            /* アニメーション中は他のタイルより手前に表示 */
+            z-index: 10;
+        }
+        @keyframes pop {
+            0% {
+                transform: translate(calc(1rem + var(--x) * (100% + 1rem)), calc(1rem + var(--y) * (100% + 1rem))) scale(1);
+            }
+            50% {
+                transform: translate(calc(1rem + var(--x) * (100% + 1rem)), calc(1rem + var(--y) * (100% + 1rem))) scale(1.2);
+            }
+            100% {
+                transform: translate(calc(1rem + var(--x) * (100% + 1rem)), calc(1rem + var(--y) * (100% + 1rem))) scale(1);
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 flex flex-col items-center justify-center min-h-screen p-4">
+
+    <div class="w-full max-w-md">
+        <!-- ヘッダー：タイトル、スコア、リセットボタン -->
+        <header class="flex items-center justify-between mb-4">
+            <h1 class="text-6xl font-black text-gray-700">2048</h1>
+            <div class="flex items-center gap-4">
+                <div class="bg-gray-300 rounded-lg p-3 text-center">
+                    <div class="text-sm font-bold text-gray-600 uppercase">Score</div>
+                    <div id="score" class="text-2xl font-bold">0</div>
+                </div>
+                <button id="reset-button" class="bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 px-5 rounded-lg transition-colors">
+                    New Game
+                </button>
+            </div>
+        </header>
+
+        <!-- ゲームボード -->
+        <main id="game-board-container" class="relative">
+            <!-- ゲームオーバー/クリア メッセージ (最初は非表示) -->
+            <div id="game-message" class="absolute inset-0 bg-black bg-opacity-50 flex-col items-center justify-center rounded-lg z-20 hidden">
+                <p id="message-text" class="text-4xl font-bold text-white mb-4"></p>
+                <button id="retry-button" class="bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 px-5 rounded-lg transition-colors">
+                    Try Again
+                </button>
+            </div>
+
+            <!-- ゲームグリッド -->
+            <div id="game-board">
+                <!-- JavaScriptで 16個の .grid-cell と .tile を動的に追加 -->
+            </div>
+        </main>
+
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const gameBoard = document.getElementById('game-board');
+            const scoreElement = document.getElementById('score');
+            const resetButton = document.getElementById('reset-button');
+            const gameMessage = document.getElementById('game-message');
+            const messageText = document.getElementById('message-text');
+            const retryButton = document.getElementById('retry-button');
+
+            const GRID_SIZE = 4;
+            let grid = [];
+            let score = 0;
+            let isLocked = false; // アニメーション中の操作をロック
+            let gameWon = false;
+
+            // タイルの色定義
+            const tileColors = {
+                2:    { bg: '#eee4da', text: '#776e65' },
+                4:    { bg: '#ede0c8', text: '#776e65' },
+                8:    { bg: '#f2b179', text: '#f9f6f2' },
+                16:   { bg: '#f59563', text: '#f9f6f2' },
+                32:   { bg: '#f67c5f', text: '#f9f6f2' },
+                64:   { bg: '#f65e3b', text: '#f9f6f2' },
+                128:  { bg: '#edcf72', text: '#f9f6f2' },
+                256:  { bg: '#edcc61', text: '#f9f6f2' },
+                512:  { bg: '#edc850', text: '#f9f6f2' },
+                1024: { bg: '#edc53f', text: '#f9f6f2' },
+                2048: { bg: '#edc22e', text: '#f9f6f2' },
+            };
+            // 2048を超えるタイルの色
+            const defaultTileColor = { bg: '#3c3a32', text: '#f9f6f2' };
+
+            // --- 1. ゲームの初期化 ---
+
+            function initializeGrid() {
+                gameBoard.innerHTML = ''; // ボードをクリア
+                grid = [];
+                for (let i = 0; i < GRID_SIZE; i++) {
+                    const row = [];
+                    for (let j = 0; j < GRID_SIZE; j++) {
+                        // グリッドの背景セルを追加
+                        const cell = document.createElement('div');
+                        cell.classList.add('grid-cell');
+                        gameBoard.appendChild(cell);
+                        // グリッドデータを初期化 (null = 空)
+                        row.push(null);
+                    }
+                    grid.push(row);
+                }
+            }
+
+            function startGame() {
+                initializeGrid();
+                score = 0;
+                gameWon = false;
+                updateScore(0);
+                gameMessage.classList.add('hidden');
+                gameMessage.classList.remove('flex');
+                
+                // 最初のタイルを2つ追加
+                addRandomTile();
+                addRandomTile();
+                isLocked = false;
+            }
+
+            // --- 2. タイルの管理 ---
+
+            // ランダムな空きセルに新しいタイルを追加
+            function addRandomTile() {
+                const emptyCells = [];
+                for (let r = 0; r < GRID_SIZE; r++) {
+                    for (let c = 0; c < GRID_SIZE; c++) {
+                        if (grid[r][c] === null) {
+                            emptyCells.push({ r, c });
+                        }
+                    }
+                }
+
+                if (emptyCells.length > 0) {
+                    const { r, c } = emptyCells[Math.floor(Math.random() * emptyCells.length)];
+                    const value = Math.random() < 0.9 ? 2 : 4;
+                    const tile = createTile(r, c, value, true); // newTile = true
+                    grid[r][c] = tile;
+                }
+            }
+
+            // タイルのDOM要素を作成
+            function createTile(r, c, value, newTile = false) {
+                const tileElement = document.createElement('div');
+                tileElement.classList.add('tile');
+                if (newTile) {
+                    tileElement.classList.add('new'); // 新規アニメーション用
+                }
+                
+                // タイルオブジェクト
+                const tile = {
+                    element: tileElement,
+                    r,
+                    c,
+                    value,
+                    merged: false, // このターンでマージされたか
+                };
+
+                updateTile(tile);
+                gameBoard.appendChild(tileElement);
+                return tile;
+            }
+
+            // タイルのDOM要素を更新 (位置と値)
+            function updateTile(tile) {
+                const { element, r, c, value } = tile;
+                
+                element.style.setProperty('--x', c); // 列 (x座標)
+                element.style.setProperty('--y', r); // 行 (y座標)
+                element.dataset.value = value;
+                element.textContent = value;
+
+                // 色の適用
+                const colors = tileColors[value] || defaultTileColor;
+                element.style.setProperty('--bg-color', colors.bg);
+                element.style.setProperty('--text-color', colors.text);
+            }
+
+            // スコアの更新
+            function updateScore(amount) {
+                score += amount;
+                scoreElement.textContent = score;
+            }
+
+
+            // --- 3. 入力処理 (キーボード & スワイプ) ---
+
+            function setupInput() {
+                // キーボード入力
+                document.addEventListener('keydown', handleKeyInput);
+
+                // スワイプ入力
+                let touchStartX = 0;
+                let touchStartY = 0;
+                let touchEndX = 0;
+                let touchEndY = 0;
+
+                gameBoard.addEventListener('touchstart', (e) => {
+                    if (isLocked) return;
+                    touchStartX = e.touches[0].clientX;
+                    touchStartY = e.touches[0].clientY;
+                });
+
+                gameBoard.addEventListener('touchmove', (e) => {
+                    if (isLocked) return;
+                    touchEndX = e.touches[0].clientX;
+                    touchEndY = e.touches[0].clientY;
+                    // スワイプ中のスクロールを防ぐ
+                    e.preventDefault();
+                }, { passive: false });
+
+                gameBoard.addEventListener('touchend', () => {
+                    if (isLocked) return;
+                    handleSwipe();
+                    touchStartX = 0;
+                    touchStartY = 0;
+                    touchEndX = 0;
+                    touchEndY = 0;
+                });
+
+                // リセットボタン
+                resetButton.addEventListener('click', startGame);
+                retryButton.addEventListener('click', startGame);
+            }
+
+            function handleKeyInput(e) {
+                if (isLocked) return;
+
+                let moved = false;
+                switch (e.key) {
+                    case 'ArrowUp':
+                        moved = moveUp();
+                        break;
+                    case 'ArrowDown':
+                        moved = moveDown();
+                        break;
+                    case 'ArrowLeft':
+                        moved = moveLeft();
+                        break;
+                    case 'ArrowRight':
+                        moved = moveRight();
+                        break;
+                    default:
+                        return; // 他キーは無視
+                }
+                
+                if (moved) {
+                    handleMoveEnd();
+                }
+            }
+
+            function handleSwipe() {
+                const dx = touchEndX - touchStartX;
+                const dy = touchEndY - touchStartY;
+                const absDx = Math.abs(dx);
+                const absDy = Math.abs(dy);
+
+                // 最小スワイプ距離
+                if (Math.max(absDx, absDy) < 50) return;
+
+                let moved = false;
+                if (absDx > absDy) {
+                    // 水平スワイプ
+                    moved = dx > 0 ? moveRight() : moveLeft();
+                } else {
+                    // 垂直スワイプ
+                    moved = dy > 0 ? moveDown() : moveUp();
+                }
+                
+                if (moved) {
+                    handleMoveEnd();
+                }
+            }
+            
+            // 移動後の処理
+            function handleMoveEnd() {
+                isLocked = true; // アニメーション開始、ロック
+
+                // アニメーション完了を待つ (CSSのtransition時間 + 余裕)
+                setTimeout(() => {
+                    // マージされたタイルをクリーンアップ
+                    for (let r = 0; r < GRID_SIZE; r++) {
+                        for (let c = 0; c < GRID_SIZE; c++) {
+                            const tile = grid[r][c];
+                            if (tile) {
+                                tile.merged = false;
+                                // アニメーションクラスを削除
+                                tile.element.classList.remove('merged');
+                            }
+                        }
+                    }
+
+                    addRandomTile(); // 新しいタイルを追加
+                    
+                    // 新規タイルアニメーションのために少し待つ
+                    setTimeout(() => {
+                        const newTiles = document.querySelectorAll('.tile.new');
+                        newTiles.forEach(t => t.classList.remove('new'));
+                    }, 100);
+
+
+                    if (!canMove()) {
+                        // ゲームオーバー
+                        showGameMessage(gameWon ? "You Win!" : "Game Over!");
+                    } else {
+                        isLocked = false; // アニメーション終了、ロック解除
+                    }
+
+                }, 100); // CSS transitionが100msなので
+            }
+
+
+            // --- 4. 移動ロジック ---
+
+            /*
+             * 移動ロジックは、スライドとマージを分離して処理します。
+             * 1. slideTiles: 隙間を詰める (例: [2, null, 2, null] -> [2, 2, null, null])
+             * 2. mergeTiles: 隣り合う同じタイルをマージ (例: [2, 2, null, null] -> [4, null, null, null])
+             * 3. slideTiles: マージによってできた隙間を詰める (例: [null, 2, 2, null] -> [null, 4, null, null] -> [4, null, null, null])
+            */
+
+            // 上へ移動
+            function moveUp() {
+                return slide(true, true); // (isVertical = true, isAscending = true)
+            }
+            // 下へ移動
+            function moveDown() {
+                return slide(true, false); // (isVertical = true, isAscending = false)
+            }
+            // 左へ移動
+            function moveLeft() {
+                return slide(false, true); // (isVertical = false, isAscending = true)
+            }
+            // 右へ移動
+            function moveRight() {
+                return slide(false, false); // (isVertical = false, isAscending = false)
+            }
+
+            function slide(isVertical, isAscending) {
+                let moved = false;
+                
+                const outerLoopOrder = isAscending ? [0, 1, 2, 3] : [3, 2, 1, 0];
+                const innerLoopOrder = isAscending ? [0, 1, 2, 3] : [3, 2, 1, 0];
+                
+                // 1. スライドとマージ
+                for (let i of outerLoopOrder) { // isVertical ? c : r
+                    const line = [];
+                    // 現在の行/列からタイルを取得
+                    for (let j of innerLoopOrder) { // isVertical ? r : c
+                        const r = isVertical ? j : i;
+                        const c = isVertical ? i : j;
+                        if (grid[r][c]) {
+                            line.push(grid[r][c]);
+                        }
+                    }
+
+                    // マージ処理
+                    const newLine = mergeLine(line);
+                    
+                    // グリッドに反映
+                    let lineIndex = 0;
+                    for (let j of innerLoopOrder) { // isVertical ? r : c
+                        const r = isVertical ? j : i;
+                        const c = isVertical ? i : j;
+                        
+                        const oldTile = grid[r][c];
+                        const newTile = newLine[lineIndex] || null;
+                        
+                        if (oldTile !== newTile) {
+                            moved = true;
+                        }
+
+                        grid[r][c] = newTile;
+                        if (newTile) {
+                            // タイルの位置情報を更新 (アニメーションのため)
+                            newTile.r = r;
+                            newTile.c = c;
+                            updateTile(newTile);
+                            lineIndex++;
+                        }
+                    }
+                }
+                
+                return moved;
+            }
+
+            // 1ライン分のマージ処理
+            function mergeLine(line) {
+                const mergedLine = [];
+                
+                for (let i = 0; i < line.length; i++) {
+                    const currentTile = line[i];
+                    
+                    if (i < line.length - 1 && line[i+1].value === currentTile.value && !currentTile.merged && !line[i+1].merged) {
+                        // マージする
+                        const newValue = currentTile.value * 2;
+                        
+                        // マージ先のタイル (currentTile) を更新
+                        currentTile.value = newValue;
+                        currentTile.merged = true; // マージ済みフラグ
+                        
+                        // マージされたタイル (line[i+1]) を削除
+                        line[i+1].element.remove();
+                        
+                        // アニメーションクラスを追加
+                        currentTile.element.classList.add('merged');
+                        
+                        // スコア更新
+                        updateScore(newValue);
+
+                        // 勝利チェック
+                        if (newValue === 2048) {
+                            gameWon = true;
+                        }
+
+                        mergedLine.push(currentTile);
+                        i++; // 次のタイルをスキップ
+                    } else {
+                        mergedLine.push(currentTile);
+                    }
+                }
+                return mergedLine;
+            }
+
+
+            // --- 5. ゲーム終了チェック ---
+
+            function canMove() {
+                // 1. 空きセルがあるか
+                for (let r = 0; r < GRID_SIZE; r++) {
+                    for (let c = 0; c < GRID_SIZE; c++) {
+                        if (grid[r][c] === null) {
+                            return true; // 空きセルあり
+                        }
+                    }
+                }
+
+                // 2. マージ可能なセルがあるか (隣接するセルが同じ値)
+                for (let r = 0; r < GRID_SIZE; r++) {
+                    for (let c = 0; c < GRID_SIZE; c++) {
+                        const tile = grid[r][c];
+                        if (!tile) continue;
+                        
+                        // 下をチェック
+                        if (r < GRID_SIZE - 1 && grid[r + 1][c] && grid[r + 1][c].value === tile.value) {
+                            return true;
+                        }
+                        // 右をチェック
+                        if (c < GRID_SIZE - 1 && grid[r][c + 1] && grid[r][c + 1].value === tile.value) {
+                            return true;
+                        }
+                    }
+                }
+
+                // どちらもない場合
+                return false;
+            }
+
+            // ゲームオーバー/勝利メッセージの表示
+            function showGameMessage(message) {
+                isLocked = true; // 操作を完全にロック
+                messageText.textContent = message;
+                gameMessage.classList.remove('hidden');
+                gameMessage.classList.add('flex');
+            }
+
+            // --- ゲーム開始 ---
+            setupInput();
+            startGame();
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>テトリスもどき (機能追加版)</title>
+    <style>
+        /* CSS: ゲームの見た目 */
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f0f0f0;
+            margin: 0;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        .game-container {
+            display: flex;
+            gap: 20px;
+        }
+        /* メインのゲームボード */
+        canvas#gameCanvas {
+            border: 2px solid #333;
+            background-color: #eee; /* ボードの背景色 */
+        }
+        .info-panel {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            width: 150px;
+        }
+        .info-box {
+            border: 1px solid #ccc;
+            padding: 10px;
+            background: #fff;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+        .info-box h3 {
+            margin-top: 0;
+            margin-bottom: 5px;
+        }
+        #score, #level, #lines {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #d9534f;
+        }
+        /* 次のブロック・ホールド表示エリア */
+        #nextCanvas, #holdCanvas {
+            border: 1px solid #ccc;
+            background-color: #f9f9f9;
+        }
+        button#startButton {
+            padding: 10px 15px;
+            font-size: 1em;
+            cursor: pointer;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+        }
+        button#startButton:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+
+    <div>
+        <h1>テトリスもどき</h1>
+        <div class="game-container">
+            <canvas id="gameCanvas"></canvas>
+            
+            <div class="info-panel">
+                <div class="info-box">
+                    <h3>SCORE</h3>
+                    <div id="score">0</div>
+                </div>
+                <div class="info-box">
+                    <h3>LEVEL</h3>
+                    <div id="level">1</div>
+                </div>
+                <div class="info-box">
+                    <h3>LINES</h3>
+                    <div id="lines">0</div>
+                </div>
+
+                <div class="info-box">
+                    <h3>HOLD (C)</h3>
+                    <canvas id="holdCanvas" width="120" height="120"></canvas>
+                </div>
+                <div class="info-box">
+                    <h3>NEXT</h3>
+                    <canvas id="nextCanvas" width="120" height="120"></canvas>
+                </div>
+                <button id="startButton">START</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // JavaScript: ゲームのロジック
+
+        // --- 1. 定数と変数の設定 ---
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const nextCanvas = document.getElementById('nextCanvas');
+        const nextCtx = nextCanvas.getContext('2d');
+
+        // ▼▼▼【ホールド機能】変数追加 ▼▼▼
+        const holdCanvas = document.getElementById('holdCanvas');
+        const holdCtx = holdCanvas.getContext('2d');
+        // ▲▲▲【ホールド機能】変数追加 ▲▲▲
+
+        const scoreEl = document.getElementById('score');
+        const levelEl = document.getElementById('level');
+        const linesEl = document.getElementById('lines');
+        const startButton = document.getElementById('startButton');
+
+        const ROWS = 20;
+        const COLS = 10;
+        const BLOCK_SIZE = 30;
+        const NEXT_BLOCK_SIZE = 20; // ホールドにもこのサイズを使用
+
+        canvas.width = COLS * BLOCK_SIZE;
+        canvas.height = ROWS * BLOCK_SIZE;
+        
+        const SHAPES = [
+            [],
+            [[0, 1, 0], [1, 1, 1]], // T
+            [[1, 1, 1, 1]], // I
+            [[1, 1], [1, 1]], // O
+            [[0, 0, 1], [1, 1, 1]], // L
+            [[1, 0, 0], [1, 1, 1]], // J
+            [[0, 1, 1], [1, 1, 0]], // S
+            [[1, 1, 0], [0, 1, 1]]  // Z
+        ];
+
+        const COLORS = [
+            null, 'purple', 'cyan', 'yellow', 'orange', 'blue', 'green', 'red'
+        ];
+
+        let board = [];
+        let currentPiece;
+        let nextPiece;
+
+        // ▼▼▼【ホールド機能】変数追加 ▼▼▼
+        let holdPiece = null;
+        let hasHeldThisTurn = false; // 1ターンに1回だけホールドできるようにするフラグ
+        // ▲▲▲【ホールド機能】変数追加 ▲▲▲
+
+        let score = 0;
+        let level = 1;
+        let lines = 0;
+        let dropInterval;
+        let isGameOver = true;
+        let isPaused = false;
+        let gameLoopSpeed = 1000;
+
+        // --- 2. ゲームの初期化・リセット ---
+
+        function init() {
+            board = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+            
+            score = 0;
+            level = 1;
+            lines = 0;
+            gameLoopSpeed = 1000;
+            scoreEl.textContent = score;
+            levelEl.textContent = level;
+            linesEl.textContent = lines;
+
+            // ▼▼▼【ホールド機能】リセット処理 ▼▼▼
+            holdPiece = null;
+            hasHeldThisTurn = false;
+            drawHoldPiece();
+            // ▲▲▲【ホールド機能】リセット処理 ▲▲▲
+
+            isGameOver = false;
+            isPaused = false;
+            
+            nextPiece = createNewPiece();
+            spawnNewPiece();
+            
+            startGameLoop();
+            
+            startButton.textContent = "START";
+        }
+
+        function startGameLoop() {
+            if (dropInterval) clearInterval(dropInterval);
+            dropInterval = setInterval(gameLoop, gameLoopSpeed / level);
+        }
+
+        // --- 3. ピースの操作 ---
+
+        function createNewPiece() {
+            const rand = Math.floor(Math.random() * (SHAPES.length - 1)) + 1;
+            const shape = SHAPES[rand];
+            const colorIndex = rand;
+            
+            return {
+                shape: shape,
+                colorIndex: colorIndex,
+                x: Math.floor(COLS / 2) - Math.floor(shape[0].length / 2),
+                y: 0
+            };
+        }
+
+        function spawnNewPiece() {
+            currentPiece = nextPiece;
+            nextPiece = createNewPiece();
+            
+            // ▼▼▼【ホールド機能】ターン開始時にフラグリセット ▼▼▼
+            hasHeldThisTurn = false;
+            // ▲▲▲【ホールド機能】ターン開始時にフラグリセット ▲▲▲
+
+            if (!isValidMove(currentPiece.x, currentPiece.y, currentPiece.shape)) {
+                gameOver();
+            }
+
+            drawNextPiece();
+        }
+
+        // --- 4. 描画処理 ---
+
+        function drawBlock(ctx, x, y, colorIndex, blockSize) {
+            ctx.fillStyle = COLORS[colorIndex];
+            ctx.fillRect(x * blockSize, y * blockSize, blockSize, blockSize);
+            ctx.strokeStyle = 'rgba(50, 50, 50, 0.5)';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x * blockSize, y * blockSize, blockSize, blockSize);
+        }
+
+        function drawBoard() {
+            ctx.fillStyle = '#eee';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            for (let y = 0; y < ROWS; y++) {
+                for (let x = 0; x < COLS; x++) {
+                    if (board[y][x] > 0) {
+                        drawBlock(ctx, x, y, board[y][x], BLOCK_SIZE);
+                    }
+                }
+            }
+        }
+
+        function drawCurrentPiece() {
+            if (isGameOver || !currentPiece) return;
+            const { x, y, shape, colorIndex } = currentPiece;
+            shape.forEach((row, rowY) => {
+                row.forEach((value, colX) => {
+                    if (value > 0) {
+                        drawBlock(ctx, x + colX, y + rowY, colorIndex, BLOCK_SIZE);
+                    }
+                });
+            });
+        }
+
+        // ▼▼▼【ゴーストミノ機能】関数追加 ▼▼▼
+        /**
+         * ゴーストミノ（着地点）を描画する
+         */
+        function drawGhostPiece() {
+            if (isGameOver || isPaused || !currentPiece) return;
+
+            // 1. ゴーストの位置を計算
+            let ghostY = currentPiece.y;
+            // 衝突するまでY座標を下にずらし続ける
+            while (isValidMove(currentPiece.x, ghostY + 1, currentPiece.shape)) {
+                ghostY++;
+            }
+
+            // 2. ゴーストを描画 (半透明のグレー)
+            const { x, shape } = currentPiece;
+            
+            // 色 (半透明)
+            ctx.fillStyle = 'rgba(100, 100, 100, 0.3)';
+            // 枠線
+            ctx.strokeStyle = 'rgba(100, 100, 100, 0.8)';
+            ctx.lineWidth = 1;
+
+            shape.forEach((row, rowY) => {
+                row.forEach((value, colX) => {
+                    if (value > 0) {
+                        const drawX = (x + colX) * BLOCK_SIZE;
+                        const drawY = (ghostY + rowY) * BLOCK_SIZE;
+                        
+                        // 塗りつぶし
+                        ctx.fillRect(drawX, drawY, BLOCK_SIZE, BLOCK_SIZE);
+                        // 枠線のみ (こちらの方が見やすい場合もある)
+                        // ctx.strokeRect(drawX, drawY, BLOCK_SIZE, BLOCK_SIZE); 
+                    }
+                });
+            });
+        }
+        // ▲▲▲【ゴーストミノ機能】関数追加 ▲▲▲
+
+
+        // 次のピースを描画 (共通関数化)
+        function drawSidePanelPiece(pCtx, piece) {
+            pCtx.clearRect(0, 0, pCtx.canvas.width, pCtx.canvas.height);
+            pCtx.fillStyle = '#f9f9f9'; // 背景色
+            pCtx.fillRect(0, 0, pCtx.canvas.width, pCtx.canvas.height);
+
+            if (piece === null) return;
+
+            const { shape, colorIndex } = piece;
+            // センタリング
+            const xOffset = Math.floor((pCtx.canvas.width / NEXT_BLOCK_SIZE - shape[0].length) / 2);
+            const yOffset = Math.floor((pCtx.canvas.height / NEXT_BLOCK_SIZE - shape.length) / 2);
+
+            shape.forEach((row, rowY) => {
+                row.forEach((value, colX) => {
+                    if (value > 0) {
+                        drawBlock(pCtx, xOffset + colX, yOffset + rowY, colorIndex, NEXT_BLOCK_SIZE);
+                    }
+                });
+            });
+        }
+
+        function drawNextPiece() {
+            drawSidePanelPiece(nextCtx, nextPiece);
+        }
+
+        // ▼▼▼【ホールド機能】関数追加 ▼▼▼
+        function drawHoldPiece() {
+            drawSidePanelPiece(holdCtx, holdPiece);
+        }
+        // ▲▲▲【ホールド機能】関数追加 ▲▲▲
+
+
+        // メインの描画関数
+        function draw() {
+            if (isGameOver || isPaused) return;
+            drawBoard();
+
+            // ▼▼▼【ゴーストミノ機能】描画順変更 ▼▼▼
+            drawGhostPiece(); // ゴーストを先に描画
+            drawCurrentPiece(); // その上に現在のピースを描画
+            // ▲▲▲【ゴーストミノ機能】描画順変更 ▲▲▲
+        }
+
+        // --- 5. 衝突判定と移動 ---
+
+        function isValidMove(xPos, yPos, shape) {
+            for (let y = 0; y < shape.length; y++) {
+                for (let x = 0; x < shape[y].length; x++) {
+                    if (shape[y][x] > 0) {
+                        const newX = xPos + x;
+                        const newY = yPos + y;
+
+                        if (newX < 0 || newX >= COLS || newY >= ROWS) {
+                            return false;
+                        }
+                        if (newY >= 0 && board[newY][newX] > 0) {
+                            return false;
+                        }
+                    }
+                }
+            }
+            return true;
+        }
+
+        function movePiece(dx, dy) {
+            if (isGameOver || isPaused) return;
+
+            const newX = currentPiece.x + dx;
+            const newY = currentPiece.y + dy;
+
+            if (isValidMove(newX, newY, currentPiece.shape)) {
+                currentPiece.x = newX;
+                currentPiece.y = newY;
+                draw();
+                return true;
+            }
+            return false;
+        }
+
+        function rotatePiece() {
+            if (isGameOver || isPaused) return;
+
+            const shape = currentPiece.shape;
+            const N = shape.length;
+            const M = shape[0].length;
+            const newShape = Array.from({ length: M }, () => Array(N).fill(0));
+
+            for (let y = 0; y < N; y++) {
+                for (let x = 0; x < M; x++) {
+                    newShape[x][N - 1 - y] = shape[y][x];
+                }
+            }
+            
+            let newX = currentPiece.x;
+            if (!isValidMove(newX, currentPiece.y, newShape)) {
+                if (isValidMove(newX + 1, currentPiece.y, newShape)) {
+                    newX++;
+                } 
+                else if (isValidMove(newX - 1, currentPiece.y, newShape)) {
+                    newX--;
+                } 
+                else if (isValidMove(newX + 2, currentPiece.y, newShape)) {
+                    newX += 2;
+                }
+                else if (isValidMove(newX - 2, currentPiece.y, newShape)) {
+                    newX -= 2;
+                }
+                else {
+                    return;
+                }
+            }
+
+            currentPiece.shape = newShape;
+            currentPiece.x = newX;
+            draw();
+        }
+
+        function pieceLanded() {
+            currentPiece.shape.forEach((row, rowY) => {
+                row.forEach((value, colX) => {
+                    if (value > 0) {
+                        const boardX = currentPiece.x + colX;
+                        const boardY = currentPiece.y + rowY;
+                        if (boardY >= 0) {
+                             board[boardY][boardX] = currentPiece.colorIndex;
+                        }
+                    }
+                });
+            });
+
+            clearLines();
+            spawnNewPiece(); // この中で hasHeldThisTurn = false にリセットされる
+            draw();
+        }
+
+
+        // --- 6. ライン消去とスコア ---
+
+        function clearLines() {
+            let linesCleared = 0;
+            
+            for (let y = ROWS - 1; y >= 0; y--) {
+                if (board[y].every(cell => cell > 0)) {
+                    linesCleared++;
+                    board.splice(y, 1);
+                    board.unshift(Array(COLS).fill(0));
+                    y++;
+                }
+            }
+
+            if (linesCleared > 0) {
+                score += [0, 100, 300, 500, 800][linesCleared] * level;
+                lines += linesCleared;
+                
+                const newLevel = Math.floor(lines / 10) + 1;
+                if (newLevel > level) {
+                    level = newLevel;
+                    startGameLoop();
+                }
+
+                scoreEl.textContent = score;
+                levelEl.textContent = level;
+                linesEl.textContent = lines;
+            }
+        }
+
+        // --- 7. ゲームループとゲームオーバー ---
+
+        function gameLoop() {
+            if (isGameOver || isPaused) return;
+            const moved = movePiece(0, 1);
+            if (!moved) {
+                pieceLanded();
+            }
+        }
+
+        function gameOver() {
+            isGameOver = true;
+            clearInterval(dropInterval);
+            
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = 'white';
+            ctx.font = '30px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2);
+            
+            startButton.textContent = "RESTART";
+        }
+
+        // --- 8. ポーズ機能 ---
+        function togglePause() {
+            if (isGameOver) return;
+            
+            isPaused = !isPaused;
+            if (isPaused) {
+                clearInterval(dropInterval);
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = 'white';
+                ctx.font = '30px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('PAUSED', canvas.width / 2, canvas.height / 2);
+                startButton.textContent = "RESUME";
+            } else {
+                startGameLoop();
+                draw();
+                startButton.textContent = "START";
+            }
+        }
+
+        // ▼▼▼【ホールド機能】関数追加 ▼▼▼
+        /**
+         * ホールド機能
+         */
+        function holdFunction() {
+            // ゲームオーバー中、ポーズ中、またはこのターン既にホールド済みなら何もしない
+            if (isGameOver || isPaused || hasHeldThisTurn) return;
+
+            hasHeldThisTurn = true; // ホールド使用済みフラグを立てる
+
+            if (holdPiece === null) {
+                // ホールドが空の場合
+                holdPiece = currentPiece; // 現在のピースをホールドへ
+                spawnNewPiece(); // 次のピースを出す
+            } else {
+                // ホールドにピースがある場合
+                // 現在のピースとホールドのピースを入れ替える
+                [currentPiece, holdPiece] = [holdPiece, currentPiece];
+                
+                // 入れ替えたピース（元ホールド）を初期位置にリセット
+                currentPiece.x = Math.floor(COLS / 2) - Math.floor(currentPiece.shape[0].length / 2);
+                currentPiece.y = 0;
+                
+                // 入れ替えた直後に衝突する場合（ホールドから出したピースが即死する場合）はゲームオーバー
+                if (!isValidMove(currentPiece.x, currentPiece.y, currentPiece.shape)) {
+                    gameOver();
+                }
+            }
+            
+            drawHoldPiece(); // ホールド表示を更新
+            draw(); // メインボードも再描画 (ゴースト更新のため)
+        }
+        // ▲▲▲【ホールド機能】関数追加 ▲▲▲
+
+
+        // --- 9. イベントリスナー ---
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'p' || e.key === 'P') {
+                togglePause();
+                return;
+            }
+
+            if (isGameOver || isPaused) return;
+
+            switch (e.key) {
+                case 'ArrowLeft':
+                    movePiece(-1, 0);
+                    break;
+                case 'ArrowRight':
+                    movePiece(1, 0);
+                    break;
+                case 'ArrowDown':
+                    movePiece(0, 1);
+                    break;
+                case 'ArrowUp':
+                case 'x':
+                case 'X':
+                    rotatePiece();
+                    break;
+                case ' ':
+                    e.preventDefault();
+                    while (movePiece(0, 1)) {
+                        // 落ちなくなるまでループ
+                    }
+                    pieceLanded();
+                    break;
+                
+                // ▼▼▼【ホールド機能】キー操作追加 ▼▼▼
+                case 'c':
+                case 'C':
+                    holdFunction();
+                    break;
+                // ▲▲▲【ホールド機能】キー操作追加 ▲▲▲
+            }
+        });
+
+        startButton.addEventListener('click', () => {
+            if (isGameOver) {
+                init();
+            } else if (isPaused) {
+                togglePause();
+            }
+        });
+
+        // --- 10. 初期実行 ---
+        
+        function showStartScreen() {
+            drawBoard();
+            
+            // ▼▼▼【ホールド機能】初期表示 ▼▼▼
+            holdCtx.fillStyle = '#f9f9f9';
+            holdCtx.fillRect(0, 0, holdCanvas.width, holdCanvas.height);
+            // ▲▲▲【ホールド機能】初期表示 ▲▲▲
+
+            nextCtx.fillStyle = '#f9f9f9';
+            nextCtx.fillRect(0, 0, nextCanvas.width, nextCanvas.height);
+            
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = 'white';
+            ctx.font = '24px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('Press START', canvas.width / 2, canvas.height / 2);
+        }
+        
+        showStartScreen();
+        
+    </script>
+
+</body>
+</html>
